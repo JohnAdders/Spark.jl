@@ -5,7 +5,8 @@ import java.net._
 
 import org.apache.commons.compress.utils.Charsets
 import org.apache.spark._
-import org.apache.spark.api.java.{JavaSparkContext, JavaRDD, JavaPairRDD}
+import org.apache.spark.api.java.{JavaPairRDD, JavaRDD, JavaSparkContext}
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 
 import scala.collection.JavaConversions._
@@ -24,7 +25,7 @@ class AbstractJuliaRDD[T:ClassTag](
   override def getPartitions: Array[Partition] = firstParent.partitions
 
   // Note: needs to override in later versions of Spark
-  def getNumPartitions: Int = firstParent.partitions.length
+  //override def getNumPartitions: Int = firstParent.partitions.length
 
   override val partitioner: Option[Partitioner] = {
     if (preservePartitioning) firstParent.partitioner else None
@@ -73,7 +74,10 @@ object JuliaRDD extends Logging {
       serverSocket = new ServerSocket(0, 1, InetAddress.getByAddress(Array(127, 0, 0, 1).map(_.toByte)))
 
       // Create and start the worker
-      val pb = new ProcessBuilder(Seq("julia", "-e", "using Spark; using Iterators; Spark.launch_worker()"))
+      val juliaHome = sys.env.getOrElse("JULIA_HOME", "")
+      val juliaCommand = juliaHome + "julia"
+      //TODO read julia command path from env variable
+      val pb = new ProcessBuilder(Seq(juliaCommand, "-e", "using Spark; using Iterators; Spark.launch_worker();"))
       pb.directory(new File(SparkFiles.getRootDirectory()))
       // val workerEnv = pb.environment()
       // workerEnv.putAll(envVars)
@@ -131,7 +135,9 @@ object JuliaRDD extends Logging {
       case it: Iterator[_] =>
         while (it.hasNext) {
           dataOut.writeInt(SpecialLengths.ARRAY_VALUE)
+          logInfo("ItemWrite started: " + System.currentTimeMillis())
           writeValueToStream(it.next(), dataOut)
+          logInfo("ItemWrite done: " + System.currentTimeMillis())
         }
         dataOut.writeInt(SpecialLengths.ARRAY_END)
       case x: Int =>
