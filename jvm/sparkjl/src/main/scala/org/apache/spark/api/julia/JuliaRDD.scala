@@ -73,7 +73,10 @@ object JuliaRDD extends Logging {
       serverSocket = new ServerSocket(0, 1, InetAddress.getByAddress(Array(127, 0, 0, 1).map(_.toByte)))
 
       // Create and start the worker
-      val pb = new ProcessBuilder(Seq("julia", "-e", "using Spark.Worker; using Iterators; Spark.Worker.launch_worker();"))
+      val juliaHome = sys.env.getOrElse("JULIA_HOME", "")
+      val juliaCommand = juliaHome + "julia"
+      val pb = new ProcessBuilder(Seq(juliaCommand, "-e", "using Spark.Worker; using Iterators; Spark.Worker.launch_worker();"))
+
       pb.directory(new File(SparkFiles.getRootDirectory()))
       // val workerEnv = pb.environment()
       // workerEnv.putAll(envVars)
@@ -215,17 +218,22 @@ object JuliaRDD extends Logging {
     rdd1.cartesian(rdd2)
   }
 
-  def collectToByteArray[T](javaCollected: java.util.List[T]): Array[Byte] = {
+  def writeToByteArray[T](obj: Any): Array[Byte] = {
     val byteArrayOut = new ByteArrayOutputStream()
     val dataStream = new DataOutputStream(byteArrayOut)
-    writeValueToStream(javaCollected, dataStream)
+    writeValueToStream(obj, dataStream)
     dataStream.flush()
     byteArrayOut.toByteArray()
   }
   
   def collectToJulia(rdd: JavaRDD[Any]): Array[Byte] = {
-    collectToByteArray[Any](rdd.collect())
+    writeToByteArray[java.util.List[Any]](rdd.collect())
   }
+
+  def collectToJuliaItr(rdd: JavaRDD[Any]): java.util.List[Any] = {
+    return rdd.collect()
+  }
+
 }
 
 class JuliaPairRDD(@transient parent: RDD[_],command: Array[Byte]) extends AbstractJuliaRDD[(Any, Any)](parent, command) {
@@ -240,6 +248,9 @@ object JuliaPairRDD extends Logging {
     new JuliaPairRDD(rdd, command)
 
   def collectToJulia(rdd: JavaPairRDD[Any, Any]): Array[Byte] = {
-    JuliaRDD.collectToByteArray[(Any, Any)](rdd.collect())
+    JuliaRDD.writeToByteArray[java.util.List[(Any, Any)]](rdd.collect())
+  }
+  def collectToJuliaItr(rdd: JavaPairRDD[Any, Any]): java.util.List[(Any, Any)] = {
+    return rdd.collect()
   }
 }
